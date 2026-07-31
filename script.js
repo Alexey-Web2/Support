@@ -1,11 +1,10 @@
 /* ================= НАСТРОЙКИ ИИ ================= */
-// Вставь сюда свой ключ от Gemini (Google AI Studio)
 const API_KEY = 'AQ.Ab8RN6LFXCoLcr_m5H5dmU4QIecHnXwum7O4xcPM6rOQjZAsjQ'; 
 
 /* ================= ДАННЫЕ И СОСТОЯНИЕ ================= */
-// Используем новый ключ в localStorage, чтобы старые тестовые чаты удалились
 let chats = JSON.parse(localStorage.getItem('eleven_chats_v3')) || [];
 let activeChatId = null;
+let isGeneratingIncident = false; // Блокировка от одновременных вызовов (исправление дубликатов)
 
 // Инициализация звука
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -36,7 +35,6 @@ function renderChatList(filter = '') {
     const listEl = document.getElementById('chat-list');
     listEl.innerHTML = '';
     
-    // Если чатов нет, показываем красивую пустоту в боковой панели
     if (chats.length === 0) {
         listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">Список чатов пуст.<br>Ожидание сообщений...</div>';
         return;
@@ -47,8 +45,6 @@ function renderChatList(filter = '') {
     filtered.forEach(chat => {
         const lastMsg = chat.messages[chat.messages.length - 1] || { text: 'Нет сообщений', time: '' };
         const dotClass = chat.status === 'online' ? 'online' : (chat.status === 'typing' ? 'typing' : '');
-        
-        // Подсчет непрочитанных сообщений
         const unreadCount = chat.messages.filter(m => m.unread).length;
         
         const div = document.createElement('div');
@@ -77,8 +73,8 @@ function renderChatList(filter = '') {
 function openChat(id) {
     activeChatId = id;
     const chat = chats.find(c => c.id === id);
+    if (!chat) return;
     
-    // Снимаем статус непрочитанного со всех сообщений в чате
     chat.messages.forEach(m => m.unread = false);
     saveChats();
 
@@ -100,7 +96,8 @@ function renderMessages() {
     const container = document.getElementById('messages-container');
     const typingIndicator = document.getElementById('typing-indicator');
     const chat = chats.find(c => c.id === activeChatId);
-    
+    if (!chat) return;
+
     Array.from(container.children).forEach(child => { if(child.id !== 'typing-indicator') child.remove(); });
 
     let currentDate = null;
@@ -150,9 +147,8 @@ function sendMessage() {
     triggerUserAIResponse(chat, text);
 }
 
-// Запрос к ИИ
 async function askAI(promptText) {
-    if (API_KEY === 'ТВОЙ_API_КЛЮЧ_GEMINI') return null;
+    if (API_KEY === 'ТВОЙ_API_КЛЮЧ_GEMINI' || !API_KEY) return null;
     try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
             method: 'POST',
@@ -178,18 +174,15 @@ async function triggerUserAIResponse(chat, userText) {
         updateStatusUI(chat); renderMessages(); renderChatList();
     }, 1500);
 
-    // Генерируем ответ через ИИ
     const prompt = `Ты клиент сервиса аренды самокатов. Поддержка только что написала тебе: "${userText}". Ответь коротко, в 1-2 предложения, от лица клиента.`;
     let aiResponseText = await askAI(prompt);
 
-    // Фолбэк, если ключа нет или ИИ недоступен
     if (!aiResponseText) {
-        const fallbacks = ["Спасибо за помощь!", "Понял, попробую.", "А можно еще один вопрос?", "Супер, всё заработало."];
+        const fallbacks = ["Спасибо за помощь!", "Понял, сейчас попробую.", "А можно еще один вопрос?", "Супер, всё заработало!"];
         aiResponseText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
     }
 
     setTimeout(() => {
-        // Если чат сейчас не открыт, ставим флаг unread
         const isUnread = activeChatId !== chat.id;
         
         chat.messages.push({ sender: 'user', text: aiResponseText, time: getCurrentTime(), date: 'Сегодня', unread: isUnread });
@@ -209,45 +202,58 @@ async function triggerUserAIResponse(chat, userText) {
             updateStatusUI(chat); renderChatList(); saveChats();
         }, 6000);
 
-    }, 2000); // Имитация времени печати
+    }, 2000);
 }
 
-/* ================= ГЕНЕРАЦИЯ НОВЫХ ЧАТОВ (КАЖДУЮ МИНУТУ) ================= */
+/* ================= ГЕНЕРАЦИЯ НОВЫХ ЧАТОВ (С ЗАЩИТОЙ ОТ ДУБЛЕЙ) ================= */
 async function generateNewIncident() {
-    const newId = Math.floor(Math.random() * 9000) + 1000;
-    
-    // Генерируем проблему через ИИ
-    let issueText = await askAI("Придумай одну короткую, реалистичную проблему с арендой электросамоката, о которой клиент пишет в поддержку. Без приветствия, только суть проблемы (1 предложение).");
-    
-    // Фолбэк
-    if (!issueText) {
-        const issues = [
-            "Не могу найти самокат на карте, хотя стою рядом с ним.",
-            "Фонарь не горит, ехать темно.",
-            "Самокат заблокировался прямо во время поездки!",
-            "Приложение пишет запрещенная зона."
-        ];
-        issueText = issues[Math.floor(Math.random() * issues.length)];
+    if (isGeneratingIncident) return; // Защита от дублирования
+    isGeneratingIncident = true;
+
+    try {
+        const newId = Math.floor(Math.random() * 9000) + 1000;
+        const seed = Math.floor(Math.random() * 1000000); // Рандом для уникальности ИИ
+        
+        let issueText = await askAI(`Придумай УНИКАЛЬНУЮ и оригинальную проблему с арендой электросамоката. Рандомный код: #${seed}. Без приветствия, только суть проблемы в 1 короткое предложение.`);
+        
+        if (!issueText) {
+            const issues = [
+                "Не могу завершить поездку в приложении, выдает ошибку.",
+                "Самокат разрядился прямо во время поездки!",
+                "Списались деньги, но самокат не разблокировался.",
+                "Тормоз плохо работает, ехать опасно.",
+                "Замок шлема не открывается.",
+                "Приложение показывает, что я вне зоны парковки."
+            ];
+            issueText = issues[Math.floor(Math.random() * issues.length)];
+        }
+
+        // Дополнительная проверка: нет ли уже точно такого же текста в чатах
+        const isDuplicate = chats.some(c => c.messages.some(m => m.text === issueText));
+        if (isDuplicate) {
+            issueText += ` (Ошибка #${Math.floor(Math.random() * 90) + 10})`;
+        }
+
+        const newChat = {
+            id: newId,
+            name: `Пользователь #${newId}`,
+            status: 'online',
+            statusText: 'Онлайн',
+            messages: [{ sender: 'user', text: issueText, time: getCurrentTime(), date: 'Сегодня', unread: true }]
+        };
+
+        chats.unshift(newChat);
+        saveChats();
+        
+        renderChatList(document.getElementById('search-input').value);
+        playNotificationSound();
+        showToast('Новое обращение', issueText);
+    } finally {
+        isGeneratingIncident = false; // Снимаем замок
     }
-
-    const newChat = {
-        id: newId,
-        name: `Пользователь #${newId}`,
-        status: 'online',
-        statusText: 'Онлайн',
-        messages: [{ sender: 'user', text: issueText, time: getCurrentTime(), date: 'Сегодня', unread: true }]
-    };
-
-    chats.unshift(newChat); // Добавляем в начало
-    saveChats();
-    
-    renderChatList(document.getElementById('search-input').value);
-    
-    playNotificationSound();
-    showToast('Новое обращение', issueText);
 }
 
-// Запускаем каждую минуту (60000 мс)
+// Запуск раз в минуту
 setInterval(generateNewIncident, 60000);
 
 /* ================= МОДАЛЬНОЕ ОКНО И ТОСТЫ ================= */
@@ -287,9 +293,7 @@ function showToast(title, msg) {
 /* ================= ПОИСК И ИНИЦИАЛИЗАЦИЯ ================= */
 document.getElementById('search-input').addEventListener('input', (e) => renderChatList(e.target.value));
 
-// Первоначальный рендер
 if (chats.length > 0 && document.getElementById('empty-state').style.display !== 'none') {
-    // Если страница обновлена, а чаты есть - сбрасываем состояние на "Пусто", чтобы выбрать чат
     document.getElementById('chat-area').style.display = 'none';
     document.getElementById('empty-state').style.display = 'flex';
 }
