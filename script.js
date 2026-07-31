@@ -2,7 +2,7 @@
 const API_KEY = 'AQ.Ab8RN6LFXCoLcr_m5H5dmU4QIecHnXwum7O4xcPM6rOQjZAsjQ'; 
 
 /* ================= ДАННЫЕ И СОСТОЯНИЕ ================= */
-let chats = JSON.parse(localStorage.getItem('eleven_chats_v3')) || [];
+let chats = JSON.parse(localStorage.getItem('eleven_chats')) || [];
 let activeChatId = null;
 let isGeneratingIncident = false; // Блокировка от одновременных вызовов (исправление дубликатов)
 
