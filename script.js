@@ -1,10 +1,10 @@
 /* ================= НАСТРОЙКИ ИИ ================= */
-const API_KEY = 'AQ.Ab8RN6LFXCoLcr_m5H5dmU4QIecHnXwum7O4xcPM6rOQjZAsjQ'; 
+const API_KEY = 'AQ.Ab8RN6KsSYcUo8R8oF2ulXa0oj2YuA-1VLomqIQt7sb2vVPsZg'; 
 
 /* ================= ДАННЫЕ И СОСТОЯНИЕ ================= */
-let chats = JSON.parse(localStorage.getItem('eleven_chats')) || [];
+let chats = JSON.parse(localStorage.getItem('eleven_chats_v5')) || [];
 let activeChatId = null;
-let isGeneratingIncident = false; // Блокировка от одновременных вызовов (исправление дубликатов)
+let isGeneratingIncident = false;
 
 // Инициализация звука
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -128,7 +128,7 @@ function updateStatusUI(chat) {
     }
 }
 
-/* ================= ОТПРАВКА СООБЩЕНИЙ И ОТВЕТ ИИ ================= */
+/* ================= ОТПРАВКА СООБЩЕНИЙ И УМНЫЙ ИИ ================= */
 function handleKeyPress(e) { if(e.key === 'Enter') sendMessage(); }
 
 function sendMessage() {
@@ -174,11 +174,29 @@ async function triggerUserAIResponse(chat, userText) {
         updateStatusUI(chat); renderMessages(); renderChatList();
     }, 1500);
 
-    const prompt = `Ты клиент сервиса аренды самокатов. Поддержка только что написала тебе: "${userText}". Ответь коротко, в 1-2 предложения, от лица клиента.`;
+    // Сбор всей истории переписки
+    const conversationHistory = chat.messages.map(m => 
+        `${m.sender === 'user' ? 'Клиент' : 'Поддержка'}: ${m.text}`
+    ).join('\n');
+
+    const prompt = `Ты клиент сервиса аренды электросамокатов.
+Вот вся история вашей переписки с поддержкой:
+---
+${conversationHistory}
+---
+
+Поддержка только что ответила тебе: "${userText}".
+Напиши логичный ответ от лица клиента (1-2 предложения). 
+КРИТИЧЕСКИ ВАЖНО:
+- Строго соблюдай контекст всего диалога.
+- Если поддержка попросила подождать — ответь "Хорошо, жду" или аналогично.
+- Если тебе ответили на вопрос или решили проблему — поблагодари.
+- Не говори "всё заработало", если специалист ещё ничего не сделал.`;
+
     let aiResponseText = await askAI(prompt);
 
     if (!aiResponseText) {
-        const fallbacks = ["Спасибо за помощь!", "Понял, сейчас попробую.", "А можно еще один вопрос?", "Супер, всё заработало!"];
+        const fallbacks = ["Хорошо, жду.", "Понял, спасибо за информацию.", "Отлично, сейчас проверю.", "Да, всё верно."];
         aiResponseText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
     }
 
@@ -205,33 +223,37 @@ async function triggerUserAIResponse(chat, userText) {
     }, 2000);
 }
 
-/* ================= ГЕНЕРАЦИЯ НОВЫХ ЧАТОВ (С ЗАЩИТОЙ ОТ ДУБЛЕЙ) ================= */
+/* ================= ГЕНЕРАЦИЯ УНИКАЛЬНЫХ ОБРАЩЕНИЙ ================= */
+const PROBLEM_CATEGORIES = [
+    "ошибка списания средств или двойная оплата",
+    "механическая поломка (пробитое колесо, отказали тормоза, люфт руля)",
+    "сбой GPS (приложение показывает не то место, не получается завершить поездку)",
+    "проблема со шлемом или заклинившим замком парковки",
+    "вопрос по превышению скорости, штрафам или запрещенным зонам",
+    "самокат не разблокируется при сканировании QR-кода",
+    "забытые личные вещи в сумочке или на руле самоката",
+    "вопрос по промокодам, подписке или баллам лояльности"
+];
+
 async function generateNewIncident() {
-    if (isGeneratingIncident) return; // Защита от дублирования
+    if (isGeneratingIncident) return;
     isGeneratingIncident = true;
 
     try {
         const newId = Math.floor(Math.random() * 9000) + 1000;
-        const seed = Math.floor(Math.random() * 1000000); // Рандом для уникальности ИИ
+        const randomCategory = PROBLEM_CATEGORIES[Math.floor(Math.random() * PROBLEM_CATEGORIES.length)];
+        const seed = Math.floor(Math.random() * 1000000);
         
-        let issueText = await askAI(`Придумай УНИКАЛЬНУЮ и оригинальную проблему с арендой электросамоката. Рандомный код: #${seed}. Без приветствия, только суть проблемы в 1 короткое предложение.`);
+        let issueText = await askAI(`Придумай конкретную и уникальную проблему клиента сервиса аренды электросамокатов. Категория: "${randomCategory}". Уникальный ID: ${seed}. Без приветствия, от первого лица, ровно 1 короткое предложение с деталями.`);
         
         if (!issueText) {
-            const issues = [
-                "Не могу завершить поездку в приложении, выдает ошибку.",
-                "Самокат разрядился прямо во время поездки!",
-                "Списались деньги, но самокат не разблокировался.",
-                "Тормоз плохо работает, ехать опасно.",
-                "Замок шлема не открывается.",
-                "Приложение показывает, что я вне зоны парковки."
+            const fallbacks = [
+                "У меня списали деньги за поездку дважды, верните пожалуйста.",
+                "Тормоза на самокате почти не работают, чуть не врезался!",
+                "Не могу завершить поездку, пишет 'вынесите из синей зоны', хотя я на парковке.",
+                "Замок шлема заклинило, не могу его достать."
             ];
-            issueText = issues[Math.floor(Math.random() * issues.length)];
-        }
-
-        // Дополнительная проверка: нет ли уже точно такого же текста в чатах
-        const isDuplicate = chats.some(c => c.messages.some(m => m.text === issueText));
-        if (isDuplicate) {
-            issueText += ` (Ошибка #${Math.floor(Math.random() * 90) + 10})`;
+            issueText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
         }
 
         const newChat = {
@@ -249,11 +271,10 @@ async function generateNewIncident() {
         playNotificationSound();
         showToast('Новое обращение', issueText);
     } finally {
-        isGeneratingIncident = false; // Снимаем замок
+        isGeneratingIncident = false;
     }
 }
 
-// Запуск раз в минуту
 setInterval(generateNewIncident, 60000);
 
 /* ================= МОДАЛЬНОЕ ОКНО И ТОСТЫ ================= */
