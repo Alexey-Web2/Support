@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Eleven Support Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="logo-text">Eleven <span>Support AI</span></div>
+    </header>
+
+    <div class="app-container view-list" id="app">
+        <!-- ЛЕВАЯ ПАНЕЛЬ -->
+        <div class="sidebar">
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="Поиск по чатам...">
+            </div>
+            <div class="chat-list" id="chat-list">
+                <!-- Рендерится через JS -->
+            </div>
+        </div>
+
+        <!-- ПРАВАЯ ПАНЕЛЬ -->
+        <div class="chat-area" id="chat-area" style="display: none;">
+            <div class="chat-header">
+                <div class="chat-header-user">
+                    <button class="icon-btn back-btn" onclick="closeChatMobile()">
+                        <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                    </button>
+                    <div class="avatar">
+                        <svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                    </div>
+                    <div class="chat-header-info">
+                        <h2 id="active-chat-name">Пользователь</h2>
+                        <div class="chat-header-status" id="active-chat-status">Был недавно</div>
+                    </div>
+                </div>
+                <button class="icon-btn" onclick="openModal()">
+                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+            </div>
+
+            <div class="messages-container" id="messages-container">
+                <!-- Рендерится через JS -->
+                <div class="typing-indicator" id="typing-indicator">
+                    <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="message-input" placeholder="Введите сообщение..." onkeypress="handleKeyPress(event)">
+                <button class="send-btn" onclick="sendMessage()">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- ЗАГЛУШКА -->
+        <div class="empty-state" id="empty-state">
+            <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12zM7 9h10v2H7zm0-3h10v2H7zm0 6h7v2H7z"/></svg>
+            <p>Нет активных диалогов.<br>ИИ сгенерирует обращение через минуту...</p>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО -->
+    <div class="modal-overlay" id="modal" onclick="closeModal(event)">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 16px; text-align: center; font-size: 16px;">Управление чатом</h3>
+            <button class="modal-btn danger" onclick="endChat()">Завершить чат</button>
+            <button class="modal-btn" onclick="leaveChat()">Выйти из чата</button>
+            <button class="modal-btn cancel" onclick="closeModal()">Отмена</button>
+        </div>
+    </div>
+
+    <!-- КОНТЕЙНЕР УВЕДОМЛЕНИЙ -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
