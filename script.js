@@ -2,7 +2,8 @@
 const API_KEY = 'AQ.Ab8RN6KsSYcUo8R8oF2ulXa0oj2YuA-1VLomqIQt7sb2vVPsZg'; 
 
 /* ================= ДАННЫЕ И СОСТОЯНИЕ ================= */
-let chats = JSON.parse(localStorage.getItem('eleven_chats_v5')) || [];
+const STORAGE_KEY = 'eleven_chats_v5';
+let chats = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
 let activeChatId = null;
 let isGeneratingIncident = false;
 
@@ -24,7 +25,7 @@ function playNotificationSound() {
     oscillator.stop(audioCtx.currentTime + 0.2);
 }
 
-function saveChats() { localStorage.setItem('eleven_chats_v3', JSON.stringify(chats)); }
+function saveChats() { localStorage.setItem(STORAGE_KEY, JSON.stringify(chats)); }
 function getCurrentTime() {
     const d = new Date();
     return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
@@ -144,7 +145,7 @@ function sendMessage() {
     renderMessages();
     renderChatList();
 
-    triggerUserAIResponse(chat, text);
+    triggerUserAIResponse(chat);
 }
 
 async function askAI(promptText) {
@@ -153,17 +154,29 @@ async function askAI(promptText) {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+            body: JSON.stringify({ 
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: {
+                    temperature: 0.7,
+                    stopSequences: ["ПОДДЕРЖКА:", "КЛИЕНТ:", "Поддержка:", "Клиент:"]
+                }
+            })
         });
         const data = await res.json();
-        return data.candidates[0].content.parts[0].text.trim();
+        
+        if (data.candidates && data.candidates.length > 0) {
+            let text = data.candidates[0].content.parts[0].text.trim();
+            text = text.replace(/^(Клиент|Пользователь|КЛИЕНТ)\s*:\s*/i, '').replace(/^"|"$/g, '');
+            return text;
+        }
+        return null;
     } catch (e) {
         console.error('Ошибка ИИ:', e);
         return null;
     }
 }
 
-async function triggerUserAIResponse(chat, userText) {
+async function triggerUserAIResponse(chat) {
     setTimeout(() => {
         chat.status = 'online'; chat.statusText = 'Онлайн';
         updateStatusUI(chat); renderChatList();
@@ -174,24 +187,27 @@ async function triggerUserAIResponse(chat, userText) {
         updateStatusUI(chat); renderMessages(); renderChatList();
     }, 1500);
 
-    // Сбор всей истории переписки
     const conversationHistory = chat.messages.map(m => 
-        `${m.sender === 'user' ? 'Клиент' : 'Поддержка'}: ${m.text}`
+        `${m.sender === 'user' ? 'КЛИЕНТ' : 'ПОДДЕРЖКА'}: ${m.text}`
     ).join('\n');
 
-    const prompt = `Ты клиент сервиса аренды электросамокатов.
-Вот вся история вашей переписки с поддержкой:
+    const prompt = `Ты играешь роль КЛИЕНТА в сервисе аренды электросамокатов.
+Твоя задача — продолжить диалог с техподдержкой от лица обычного человека.
+
+ПОЛНАЯ ИСТОРИЯ ДИАЛОГА:
 ---
 ${conversationHistory}
 ---
 
-Поддержка только что ответила тебе: "${userText}".
-Напиши логичный ответ от лица клиента (1-2 предложения). 
-КРИТИЧЕСКИ ВАЖНО:
-- Строго соблюдай контекст всего диалога.
-- Если поддержка попросила подождать — ответь "Хорошо, жду" или аналогично.
-- Если тебе ответили на вопрос или решили проблему — поблагодари.
-- Не говори "всё заработало", если специалист ещё ничего не сделал.`;
+Основываясь на последнем сообщении от ПОДДЕРЖКИ, напиши свой ответ от лица КЛИЕНТА.
+
+КРИТИЧЕСКИЕ ПРАВИЛА:
+1. Напиши ТОЛЬКО текст твоего ответа (без префиксов "Клиент:").
+2. Длина: 1-2 предложения. 
+3. Внимательно читай историю. Если просят данные (номер, почту, фото) — просто придумай их и напиши.
+4. Если поддержка просит подождать — ответь согласием (например, "Хорошо, жду").
+5. Если проблема решена или вопрос исчерпан — поблагодари.
+6. Отвечай ровно на то, что тебя спросили, не перескакивай на другие темы.`;
 
     let aiResponseText = await askAI(prompt);
 
@@ -220,7 +236,7 @@ ${conversationHistory}
             updateStatusUI(chat); renderChatList(); saveChats();
         }, 6000);
 
-    }, 2000);
+    }, 3000);
 }
 
 /* ================= ГЕНЕРАЦИЯ УНИКАЛЬНЫХ ОБРАЩЕНИЙ ================= */
