@@ -1,5 +1,5 @@
-/* ================= НАСТРОЙКИ ИИ ================= */
-const API_KEY = 'AQ.Ab8RN6KsSYcUo8R8oF2ulXa0oj2YuA-1VLomqIQt7sb2vVPsZg'; 
+/* ================= НАСТРОЙКИ ИИ (Google Gemini) ================= */
+const API_KEY = 'AQ.Ab8RN6L_DkcxV0GpyElgwYrO08...'; // Скопируйте ваш полный ключ из AI Studio
 
 /* ================= ДАННЫЕ И СОСТОЯНИЕ ================= */
 const STORAGE_KEY = 'eleven_chats_v5';
@@ -129,7 +129,7 @@ function updateStatusUI(chat) {
     }
 }
 
-/* ================= ОТПРАВКА СООБЩЕНИЙ И УМНЫЙ ИИ ================= */
+/* ================= ИНТЕГРАЦИЯ С GEMINI API ================= */
 function handleKeyPress(e) { if(e.key === 'Enter') sendMessage(); }
 
 function sendMessage() {
@@ -148,30 +148,50 @@ function sendMessage() {
     triggerUserAIResponse(chat);
 }
 
-async function askAI(promptText) {
-    if (API_KEY === 'ТВОЙ_API_КЛЮЧ_GEMINI' || !API_KEY) return null;
+async function askAI(chatHistoryMessages, systemInstruction) {
+    if (!API_KEY || API_KEY.trim() === '') {
+        console.error('API-ключ Gemini не указан!');
+        return null;
+    }
+
+    // Перевод всей истории сообщений в диалоговый формат Gemini
+    const contents = chatHistoryMessages.map(msg => ({
+        role: msg.sender === 'user' ? 'model' : 'user',
+        parts: [{ text: msg.text }]
+    }));
+
+    if (contents.length === 0) {
+        contents.push({ role: 'user', parts: [{ text: 'Привет' }] });
+    }
+
     try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                contents: [{ parts: [{ text: promptText }] }],
+            body: JSON.stringify({
+                systemInstruction: {
+                    parts: [{ text: systemInstruction }]
+                },
+                contents: contents,
                 generationConfig: {
                     temperature: 0.7,
                     stopSequences: ["ПОДДЕРЖКА:", "КЛИЕНТ:", "Поддержка:", "Клиент:"]
                 }
             })
         });
-        const data = await res.json();
+
+        const data = await response.json();
         
-        if (data.candidates && data.candidates.length > 0) {
+        if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
             let text = data.candidates[0].content.parts[0].text.trim();
             text = text.replace(/^(Клиент|Пользователь|КЛИЕНТ)\s*:\s*/i, '').replace(/^"|"$/g, '');
             return text;
+        } else if (data.error) {
+            console.error('ОШИБКА GEMINI API:', data.error.message, data.error);
         }
         return null;
     } catch (e) {
-        console.error('Ошибка ИИ:', e);
+        console.error('Сетевая ошибка при запросе к Gemini (проверьте VPN):', e);
         return null;
     }
 }
@@ -187,33 +207,30 @@ async function triggerUserAIResponse(chat) {
         updateStatusUI(chat); renderMessages(); renderChatList();
     }, 1500);
 
-    const conversationHistory = chat.messages.map(m => 
-        `${m.sender === 'user' ? 'КЛИЕНТ' : 'ПОДДЕРЖКА'}: ${m.text}`
-    ).join('\n');
+    const systemInstruction = `Ты играешь роль КЛИЕНТА в сервисе аренды электросамокатов.
+Твоя задача — отвечать поддержке естественным образом от лица обычного человека.
 
-    const prompt = `Ты играешь роль КЛИЕНТА в сервисе аренды электросамокатов.
-Твоя задача — продолжить диалог с техподдержкой от лица обычного человека.
+ПРАВИЛА ОТВЕТА:
+1. Напиши ТОЛЬКО текст ответа клиента (1-2 коротких предложения). Без кавычек.
+2. Внимательно читай всю историю диалога:
+   - Если поддержка попросила подождать (например: "подождите минуту", "минутку") — ответь "Хорошо, жду", "Окей, жду" или подобное.
+   - Если попросили данные (номер телефона, почту, номер самоката, фото) — выдумай эти данные и предоставь их.
+   - Если проблему решили — искренне поблагодари.
+3. Никогда не пиши от лица поддержки и не выходи из роли.`;
 
-ПОЛНАЯ ИСТОРИЯ ДИАЛОГА:
----
-${conversationHistory}
----
+    let aiResponseText = await askAI(chat.messages, systemInstruction);
 
-Основываясь на последнем сообщении от ПОДДЕРЖКИ, напиши свой ответ от лица КЛИЕНТА.
-
-КРИТИЧЕСКИЕ ПРАВИЛА:
-1. Напиши ТОЛЬКО текст твоего ответа (без префиксов "Клиент:").
-2. Длина: 1-2 предложения. 
-3. Внимательно читай историю. Если просят данные (номер, почту, фото) — просто придумай их и напиши.
-4. Если поддержка просит подождать — ответь согласием (например, "Хорошо, жду").
-5. Если проблема решена или вопрос исчерпан — поблагодари.
-6. Отвечай ровно на то, что тебя спросили, не перескакивай на другие темы.`;
-
-    let aiResponseText = await askAI(prompt);
-
+    // Умный фолбэк по смыслу сообщения, если вызов API не удался
     if (!aiResponseText) {
-        const fallbacks = ["Хорошо, жду.", "Понял, спасибо за информацию.", "Отлично, сейчас проверю.", "Да, всё верно."];
-        aiResponseText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+        const lastSupportMsg = chat.messages[chat.messages.length - 1].text.toLowerCase();
+        
+        if (lastSupportMsg.includes('подожд') || lastSupportMsg.includes('минут') || lastSupportMsg.includes('секунд')) {
+            aiResponseText = "Хорошо, жду.";
+        } else if (lastSupportMsg.includes('спасибо') || lastSupportMsg.includes('готово') || lastSupportMsg.includes('решил')) {
+            aiResponseText = "Спасибо большое за помощь!";
+        } else {
+            aiResponseText = "Понял вас, жду решения.";
+        }
     }
 
     setTimeout(() => {
@@ -236,7 +253,7 @@ ${conversationHistory}
             updateStatusUI(chat); renderChatList(); saveChats();
         }, 6000);
 
-    }, 3000);
+    }, 2500);
 }
 
 /* ================= ГЕНЕРАЦИЯ УНИКАЛЬНЫХ ОБРАЩЕНИЙ ================= */
@@ -258,9 +275,10 @@ async function generateNewIncident() {
     try {
         const newId = Math.floor(Math.random() * 9000) + 1000;
         const randomCategory = PROBLEM_CATEGORIES[Math.floor(Math.random() * PROBLEM_CATEGORIES.length)];
-        const seed = Math.floor(Math.random() * 1000000);
         
-        let issueText = await askAI(`Придумай конкретную и уникальную проблему клиента сервиса аренды электросамокатов. Категория: "${randomCategory}". Уникальный ID: ${seed}. Без приветствия, от первого лица, ровно 1 короткое предложение с деталями.`);
+        const systemInstruction = `Ты клиент сервиса аренды самокатов. Напиши 1 короткое эмоциональное предложение с жалобой по теме: "${randomCategory}". Без приветствий и лишних слов.`;
+        
+        let issueText = await askAI([], systemInstruction);
         
         if (!issueText) {
             const fallbacks = [
